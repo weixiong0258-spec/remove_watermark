@@ -12,7 +12,7 @@ let jobMap = {}; // jobId -> { element, data }
 let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set }
 let pollingJobs = new Set();
 
-console.log('App initialized. Version 4.');
+console.log('App initialized. Version 5.');
 
 uploadArea.addEventListener('click', () => fileInput.click());
 
@@ -45,6 +45,16 @@ function isImage(file) {
 
 function addFiles(files) {
     if (!files.length) return;
+    
+    // Clear previous selected UI if any
+    selectedFiles.forEach((_, index) => {
+        const tempId = `selected-${index}`;
+        if (jobMap[tempId]) {
+            jobMap[tempId].element.remove();
+            delete jobMap[tempId];
+        }
+    });
+
     selectedFiles = selectedFiles.concat(files);
     renderSelectedFiles();
     processBtn.disabled = selectedFiles.length === 0;
@@ -67,11 +77,12 @@ function renderSelectedFiles() {
 processBtn.addEventListener('click', async () => {
     if (!selectedFiles.length) return;
 
+    const filesToUpload = [...selectedFiles];
     processBtn.disabled = true;
     processBtn.textContent = '正在上传...';
 
     const formData = new FormData();
-    selectedFiles.forEach(file => formData.append('images', file));
+    filesToUpload.forEach(file => formData.append('images', file));
 
     try {
         const response = await fetch('/api/upload', {
@@ -88,11 +99,13 @@ processBtn.addEventListener('click', async () => {
             return;
         }
 
-        selectedFiles.forEach((_, index) => {
-            const tempId = `selected-${index}`;
-            if (jobMap[tempId]) {
-                jobMap[tempId].element.remove();
-                delete jobMap[tempId];
+        console.log('Upload success, jobs:', data.jobs);
+
+        // Remove ALL selected-file placeholder cards explicitly
+        Object.keys(jobMap).forEach(id => {
+            if (id.startsWith('selected-')) {
+                jobMap[id].element.remove();
+                delete jobMap[id];
             }
         });
         selectedFiles = [];
@@ -100,10 +113,15 @@ processBtn.addEventListener('click', async () => {
         getOrCreateOrderCard(data.order_id, { order_id: data.order_id, created_at: new Date().toISOString() });
 
         data.jobs.forEach(job => {
+            // Ensure no duplicate IDs
+            if (jobMap[job.id]) jobMap[job.id].element.remove();
+            
+            const card = createResultCard(job.id, job, true);
             jobMap[job.id] = {
-                element: createResultCard(job.id, job, true),
+                element: card,
                 data: job,
             };
+            updateCard(job.id, job); // Initial update to show input image
             startPolling(job.id);
         });
 
@@ -112,6 +130,7 @@ processBtn.addEventListener('click', async () => {
         processBtn.disabled = false;
 
     } catch (err) {
+        console.error('Upload error:', err);
         alert('上传出错：' + err.message);
         processBtn.disabled = false;
         processBtn.textContent = '开始处理';
@@ -195,7 +214,7 @@ function createResultCard(jobId, jobData, isCurrent) {
 function renderImagePlaceholder(status, jobId) {
     if (status === 'done' || status === 'pending' || status === 'processing') {
         const endpoint = (status === 'done') ? `/api/preview/${jobId}` : `/api/preview_input/${jobId}`;
-        return `<img src="${endpoint}?t=${Date.now()}" alt="图片" style="opacity: 0.5;">`;
+        return `<img src="${endpoint}?t=${Date.now()}" alt="图片" style="opacity: ${status === 'done' ? '1' : '0.5'};">`;
     }
     if (status === 'error') {
         return '<div class="loading error">❌</div>';
@@ -203,7 +222,7 @@ function renderImagePlaceholder(status, jobId) {
     if (status === 'skipped') {
         return '<div class="loading skip">⚠️</div>';
     }
-    return '<div class="loading">等待中...</div>';
+    return '<div class="loading">处理中...</div>';
 }
 
 function startPolling(jobId) {
@@ -226,7 +245,6 @@ async function pollJob(jobId) {
         updateCard(jobId, data);
 
         if (['done', 'error', 'skipped'].includes(data.status)) {
-            pollingJobs.add(jobId); // Keep in set until reorganized? No, delete from polling.
             pollingJobs.delete(jobId);
             reorganizeCards();
             return;
@@ -263,9 +281,9 @@ function updateCard(jobId, data) {
             imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
             if (actionsDiv) actionsDiv.style.display = 'none';
         } else if (data.status === 'pending' || data.status === 'processing') {
-            // Keep showing input image
-            if (imgDiv.querySelector('img')) {
-                imgDiv.querySelector('img').style.opacity = '0.5';
+            const currentImg = imgDiv.querySelector('img');
+            if (currentImg) {
+                currentImg.style.opacity = '0.5';
             } else {
                 imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
             }
