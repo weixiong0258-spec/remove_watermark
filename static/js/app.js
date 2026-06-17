@@ -199,10 +199,10 @@ function createResultCard(jobId, jobData, isCurrent) {
             <div class="card-time" id="time-${jobId}">${formatTime(jobData.created_at)}</div>
             <div class="card-status" id="status-${jobId}">${getStatusText(jobData.status)}${jobData.message ? '：' + jobData.message : ''}</div>
             <div class="card-actions" id="actions-${jobId}" style="display: ${isSelected ? 'flex' : 'none'};">
-                <a href="/api/download/${jobId}" class="btn-download" target="_blank" style="${isSelected ? 'display:none' : ''}">下载</a>
-                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank" style="${isSelected ? 'display:none' : ''}">预览</a>
-                <button class="btn-replace" onclick="triggerReplace('${jobId}')" style="${isSelected ? 'display:none' : ''}">替换</button>
-                <button class="btn-delete" onclick="deleteJob('${jobId}')">删除</button>
+                <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
+                <a href="/api/preview/${jobId}" class="btn-preview" id="preview-link-${jobId}" target="_blank">预览</a>
+                <button class="btn-replace" id="replace-btn-${jobId}" onclick="triggerReplace('${jobId}')">替换</button>
+                <button class="btn-delete" id="delete-btn-${jobId}" onclick="deleteJob('${jobId}')">删除</button>
             </div>
         </div>
     `;
@@ -276,6 +276,9 @@ function updateCard(jobId, data) {
     const imgDiv = document.getElementById(`img-${jobId}`);
     const statusDiv = document.getElementById(`status-${jobId}`);
     const actionsDiv = document.getElementById(`actions-${jobId}`);
+    const previewLink = document.getElementById(`preview-link-${jobId}`);
+    const replaceBtn = document.getElementById(`replace-btn-${jobId}`);
+    const deleteBtn = document.getElementById(`delete-btn-${jobId}`);
 
     if (statusDiv) {
         statusDiv.textContent = `${getStatusText(data.status)}${data.message ? '：' + data.message : ''}`;
@@ -287,7 +290,13 @@ function updateCard(jobId, data) {
             imgDiv.innerHTML = `<img src="/api/preview/${jobId}?t=${Date.now()}" alt="处理结果">`;
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
-                actionsDiv.querySelectorAll('.btn-download, .btn-preview, .btn-replace').forEach(el => el.style.display = 'inline-block');
+                actionsDiv.querySelector('.btn-download').style.display = 'inline-block';
+                if (previewLink) {
+                    previewLink.style.display = 'inline-block';
+                    previewLink.href = `/api/preview/${jobId}`;
+                }
+                if (replaceBtn) replaceBtn.style.display = 'none';
+                if (deleteBtn) deleteBtn.style.display = 'none';
             }
             
             // Add checkbox if not present
@@ -304,8 +313,13 @@ function updateCard(jobId, data) {
             imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
-                actionsDiv.querySelectorAll('.btn-download, .btn-preview').forEach(el => el.style.display = 'none');
-                actionsDiv.querySelector('.btn-replace').style.display = 'inline-block';
+                actionsDiv.querySelector('.btn-download').style.display = 'none';
+                if (previewLink) {
+                    previewLink.style.display = 'inline-block';
+                    previewLink.href = `/api/preview_input/${jobId}`;
+                }
+                if (replaceBtn) replaceBtn.style.display = 'inline-block';
+                if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
         } else if (data.status === 'pending' || data.status === 'processing') {
             const currentImg = imgDiv.querySelector('img');
@@ -316,8 +330,21 @@ function updateCard(jobId, data) {
             }
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
-                // Only show delete for pending/processing
-                actionsDiv.querySelectorAll('.btn-download, .btn-preview, .btn-replace').forEach(el => el.style.display = 'none');
+                actionsDiv.querySelector('.btn-download').style.display = 'none';
+                if (previewLink) {
+                    previewLink.style.display = 'inline-block';
+                    previewLink.href = `/api/preview_input/${jobId}`;
+                }
+                if (replaceBtn) replaceBtn.style.display = 'inline-block';
+                if (deleteBtn) deleteBtn.style.display = 'inline-block';
+            }
+        } else if (data.status === 'selected') {
+            if (actionsDiv) {
+                actionsDiv.style.display = 'flex';
+                actionsDiv.querySelector('.btn-download').style.display = 'none';
+                if (previewLink) previewLink.style.display = 'none';
+                if (replaceBtn) replaceBtn.style.display = 'none';
+                if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
         }
     }
