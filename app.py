@@ -185,6 +185,7 @@ def job_to_dict(job: Dict[str, Any]) -> Dict[str, Any]:
     """Return a job dict safe for JSON serialization to the frontend."""
     return {
         "id": job.get("id", ""),
+        "order_id": job.get("order_id", job.get("id", "")), # fallback to job id for old jobs
         "status": job.get("status", "unknown"),
         "original_name": job.get("original_name", ""),
         "filename": job.get("filename"),
@@ -201,10 +202,25 @@ def index():
 
 @app.route("/api/jobs")
 def list_jobs():
-    """Return all jobs sorted by created_at descending (newest first)."""
+    """Return all jobs grouped into orders, sorted by created_at descending."""
     all_jobs = [job_to_dict(job) for job in jobs.values()]
     all_jobs.sort(key=lambda j: j.get("created_at") or "", reverse=True)
-    return jsonify({"jobs": all_jobs})
+    
+    orders_map = {}
+    for job in all_jobs:
+        oid = job["order_id"]
+        if oid not in orders_map:
+            orders_map[oid] = {
+                "order_id": oid,
+                "created_at": job["created_at"], # Use the latest job's created_at for order
+                "jobs": []
+            }
+        orders_map[oid]["jobs"].append(job)
+        
+    orders_list = list(orders_map.values())
+    orders_list.sort(key=lambda o: o.get("created_at") or "", reverse=True)
+    
+    return jsonify({"orders": orders_list, "jobs": all_jobs}) # keep flat jobs for backward compat in active view
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -282,22 +298,6 @@ def preview(job_id: str):
 def download(job_id: str):
     job = jobs.get(job_id)
     if not job or job.get("status") != "done":
-        return jsonify({"error": "结果不可用"}), 404
-    if not os.path.exists(job["output_path"]):
-        return jsonify({"error": "结果文件已丢失，请重新处理"}), 404
-    return send_file(
-        job["output_path"],
-        as_attachment=True,
-        download_name=f"removed_{job['original_name']}",
-    )
-
-
-if __name__ == "__main__":
-    ensure_dirs()
-    load_jobs()
-    start_worker()
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
-
         return jsonify({"error": "结果不可用"}), 404
     if not os.path.exists(job["output_path"]):
         return jsonify({"error": "结果文件已丢失，请重新处理"}), 404
