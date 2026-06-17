@@ -188,6 +188,7 @@ function createResultCard(jobId, jobData, isCurrent) {
     card.id = `card-${jobId}`;
 
     const isDone = jobData.status === 'done';
+    const isSelected = jobData.status === 'selected';
     const canSelect = isDone && !jobId.startsWith('selected-');
 
     card.innerHTML = `
@@ -197,10 +198,10 @@ function createResultCard(jobId, jobData, isCurrent) {
             <div class="card-title" id="title-${jobId}">${escapeHtml(jobData.original_name || '-')}</div>
             <div class="card-time" id="time-${jobId}">${formatTime(jobData.created_at)}</div>
             <div class="card-status" id="status-${jobId}">${getStatusText(jobData.status)}${jobData.message ? '：' + jobData.message : ''}</div>
-            <div class="card-actions" id="actions-${jobId}" style="display:none;">
-                <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
-                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">预览</a>
-                <button class="btn-replace" onclick="triggerReplace('${jobId}')">替换</button>
+            <div class="card-actions" id="actions-${jobId}" style="display: ${isSelected ? 'flex' : 'none'};">
+                <a href="/api/download/${jobId}" class="btn-download" target="_blank" style="${isSelected ? 'display:none' : ''}">下载</a>
+                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank" style="${isSelected ? 'display:none' : ''}">预览</a>
+                <button class="btn-replace" onclick="triggerReplace('${jobId}')" style="${isSelected ? 'display:none' : ''}">替换</button>
                 <button class="btn-delete" onclick="deleteJob('${jobId}')">删除</button>
             </div>
         </div>
@@ -284,7 +285,10 @@ function updateCard(jobId, data) {
     if (imgDiv) {
         if (data.status === 'done') {
             imgDiv.innerHTML = `<img src="/api/preview/${jobId}?t=${Date.now()}" alt="处理结果">`;
-            if (actionsDiv) actionsDiv.style.display = 'flex';
+            if (actionsDiv) {
+                actionsDiv.style.display = 'flex';
+                actionsDiv.querySelectorAll('.btn-download, .btn-preview, .btn-replace').forEach(el => el.style.display = 'inline-block');
+            }
             
             // Add checkbox if not present
             if (!job.element.querySelector('.card-select') && !jobId.startsWith('selected-')) {
@@ -298,7 +302,11 @@ function updateCard(jobId, data) {
             }
         } else if (data.status === 'error' || data.status === 'skipped') {
             imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
-            if (actionsDiv) actionsDiv.style.display = 'flex'; // show replace/delete even on error
+            if (actionsDiv) {
+                actionsDiv.style.display = 'flex';
+                actionsDiv.querySelectorAll('.btn-download, .btn-preview').forEach(el => el.style.display = 'none');
+                actionsDiv.querySelector('.btn-replace').style.display = 'inline-block';
+            }
         } else if (data.status === 'pending' || data.status === 'processing') {
             const currentImg = imgDiv.querySelector('img');
             if (!currentImg || currentImg.src.includes('blob:')) {
@@ -306,7 +314,11 @@ function updateCard(jobId, data) {
             } else {
                 currentImg.style.opacity = '0.5';
             }
-            if (actionsDiv) actionsDiv.style.display = 'none';
+            if (actionsDiv) {
+                actionsDiv.style.display = 'flex';
+                // Only show delete for pending/processing
+                actionsDiv.querySelectorAll('.btn-download, .btn-preview, .btn-replace').forEach(el => el.style.display = 'none');
+            }
         }
     }
 }
@@ -472,8 +484,26 @@ async function loadExistingJobs() {
 }
 
 async function deleteJob(jobId) {
-    if (!confirm('确定要删除这条记录及其文件吗？')) return;
+    if (!confirm('确定要删除这张图片吗？')) return;
     
+    // If it's a local selected file (not yet uploaded)
+    if (jobId.startsWith('selected-')) {
+        const index = selectedFiles.findIndex(item => item.tempId === jobId);
+        if (index !== -1) {
+            const item = selectedFiles[index];
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+            selectedFiles.splice(index, 1);
+        }
+        const job = jobMap[jobId];
+        if (job) {
+            job.element.remove();
+            delete jobMap[jobId];
+        }
+        updateVisibility();
+        processBtn.disabled = selectedFiles.length === 0;
+        return;
+    }
+
     try {
         const response = await fetch(`/api/delete/${jobId}`, { method: 'DELETE' });
         if (response.ok) {
