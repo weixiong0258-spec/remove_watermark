@@ -294,6 +294,16 @@ def preview(job_id: str):
     return send_file(job["output_path"], mimetype="image/jpeg")
 
 
+@app.route("/api/preview_input/<job_id>")
+def preview_input(job_id: str):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "记录不存在"}), 404
+    if not os.path.exists(job["input_path"]):
+        return jsonify({"error": "原始文件已丢失"}), 404
+    return send_file(job["input_path"], mimetype="image/jpeg")
+
+
 @app.route("/api/download/<job_id>")
 def download(job_id: str):
     job = jobs.get(job_id)

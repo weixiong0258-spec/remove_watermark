@@ -12,6 +12,8 @@ let jobMap = {}; // jobId -> { element, data }
 let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set }
 let pollingJobs = new Set();
 
+console.log('App initialized. Version 4.');
+
 uploadArea.addEventListener('click', () => fileInput.click());
 
 uploadArea.addEventListener('dragover', (e) => {
@@ -118,7 +120,6 @@ processBtn.addEventListener('click', async () => {
 
 function getOrCreateOrderCard(orderId, orderData) {
     if (orderMap[orderId]) {
-        // Update time if it was missing or we have a better one
         if (orderData.created_at) {
             orderMap[orderId].timeSpan.textContent = formatTime(orderData.created_at);
             orderMap[orderId].timeSpan.dataset.iso = orderData.created_at;
@@ -172,14 +173,14 @@ function createResultCard(jobId, jobData, isCurrent) {
     card.className = 'result-card';
     card.id = `card-${jobId}`;
     card.innerHTML = `
-        <div class="card-image" id="img-${jobId}">${renderImagePlaceholder(jobData.status)}</div>
+        <div class="card-image" id="img-${jobId}">${renderImagePlaceholder(jobData.status, jobId)}</div>
         <div class="card-body">
             <div class="card-title" id="title-${jobId}">${escapeHtml(jobData.original_name || '-')}</div>
             <div class="card-time" id="time-${jobId}">${formatTime(jobData.created_at)}</div>
             <div class="card-status" id="status-${jobId}">${getStatusText(jobData.status)}${jobData.message ? '：' + jobData.message : ''}</div>
             <div class="card-actions" id="actions-${jobId}" style="display:none;">
                 <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
-                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">查看</a>
+                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">预览结果</a>
                 <button class="btn-delete" onclick="deleteJob('${jobId}')">删除</button>
             </div>
         </div>
@@ -191,9 +192,10 @@ function createResultCard(jobId, jobData, isCurrent) {
     return card;
 }
 
-function renderImagePlaceholder(status) {
-    if (status === 'done') {
-        return '<div class="loading">加载中...</div>';
+function renderImagePlaceholder(status, jobId) {
+    if (status === 'done' || status === 'pending' || status === 'processing') {
+        const endpoint = (status === 'done') ? `/api/preview/${jobId}` : `/api/preview_input/${jobId}`;
+        return `<img src="${endpoint}?t=${Date.now()}" alt="图片" style="opacity: 0.5;">`;
     }
     if (status === 'error') {
         return '<div class="loading error">❌</div>';
@@ -201,7 +203,7 @@ function renderImagePlaceholder(status) {
     if (status === 'skipped') {
         return '<div class="loading skip">⚠️</div>';
     }
-    return '<div class="loading">处理中...</div>';
+    return '<div class="loading">等待中...</div>';
 }
 
 function startPolling(jobId) {
@@ -224,6 +226,7 @@ async function pollJob(jobId) {
         updateCard(jobId, data);
 
         if (['done', 'error', 'skipped'].includes(data.status)) {
+            pollingJobs.add(jobId); // Keep in set until reorganized? No, delete from polling.
             pollingJobs.delete(jobId);
             reorganizeCards();
             return;
@@ -247,15 +250,26 @@ function updateCard(jobId, data) {
     const statusDiv = document.getElementById(`status-${jobId}`);
     const actionsDiv = document.getElementById(`actions-${jobId}`);
 
-    statusDiv.textContent = `${getStatusText(data.status)}${data.message ? '：' + data.message : ''}`;
-    statusDiv.className = `card-status status-${data.status}`;
+    if (statusDiv) {
+        statusDiv.textContent = `${getStatusText(data.status)}${data.message ? '：' + data.message : ''}`;
+        statusDiv.className = `card-status status-${data.status}`;
+    }
 
-    if (data.status === 'done') {
-        imgDiv.innerHTML = `<img src="/api/preview/${jobId}?t=${Date.now()}" alt="处理结果">`;
-        actionsDiv.style.display = 'flex';
-    } else if (data.status === 'error' || data.status === 'skipped') {
-        imgDiv.innerHTML = renderImagePlaceholder(data.status);
-        actionsDiv.style.display = 'none';
+    if (imgDiv) {
+        if (data.status === 'done') {
+            imgDiv.innerHTML = `<img src="/api/preview/${jobId}?t=${Date.now()}" alt="处理结果">`;
+            if (actionsDiv) actionsDiv.style.display = 'flex';
+        } else if (data.status === 'error' || data.status === 'skipped') {
+            imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
+            if (actionsDiv) actionsDiv.style.display = 'none';
+        } else if (data.status === 'pending' || data.status === 'processing') {
+            // Keep showing input image
+            if (imgDiv.querySelector('img')) {
+                imgDiv.querySelector('img').style.opacity = '0.5';
+            } else {
+                imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
+            }
+        }
     }
 }
 
@@ -310,6 +324,7 @@ function updateVisibility(historyOrderCount = 0) {
     }
     const hasCurrent = currentGrid.children.length > 0;
     const hasHistory = historyOrderCount > 0;
+    
     currentSection.style.display = hasCurrent ? 'block' : 'none';
     historySection.style.display = hasHistory ? 'block' : 'none';
     historyCount.textContent = hasHistory ? `共 ${historyOrderCount} 个订单` : '';
@@ -320,6 +335,8 @@ async function loadExistingJobs() {
         const response = await fetch('/api/jobs');
         const data = await response.json();
         if (!response.ok) return;
+
+        console.log('Loaded data:', data);
 
         if (data.orders) {
             data.orders.forEach(order => {
@@ -334,14 +351,13 @@ async function loadExistingJobs() {
             jobMap[job.id] = { element: card, data: job };
             
             if (!isActive) {
-                updateCard(job.id, job); // Display fix: Load image immediately
+                updateCard(job.id, job);
             } else {
                 startPolling(job.id);
             }
         });
 
         reorganizeCards();
-        updateVisibility(); // Force visibility update after loading everything
     } catch (err) {
         console.error('加载历史任务失败：', err);
     }
@@ -390,12 +406,6 @@ function formatTime(isoString) {
     if (isNaN(date.getTime())) return '';
     const pad = (n) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function escapeHtml(text) {
