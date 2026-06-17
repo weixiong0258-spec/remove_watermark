@@ -7,11 +7,13 @@ Run with:
 Then open http://127.0.0.1:5000 in a browser.
 """
 
+import io
 import json
 import os
 import queue
 import threading
 import uuid
+import zipfile
 from datetime import datetime
 from typing import Dict, Any, List
 from multiprocessing import Process, Queue as MPQueue
@@ -336,6 +338,70 @@ def delete_job(job_id: str):
     jobs.pop(job_id, None)
     save_jobs()
     return jsonify({"success": True})
+
+
+@app.route("/api/replace/<job_id>", methods=["POST"])
+def replace_image(job_id: str):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "任务不存在"}), 404
+    
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"error": "没有上传新文件"}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({"error": "不支持的文件格式"}), 400
+
+    # Delete old output if exists
+    if job.get("output_path") and os.path.exists(job["output_path"]):
+        try:
+            os.remove(job["output_path"])
+        except: pass
+
+    # Save new input over the old one (keep the same path to avoid dangling files)
+    file.save(job["input_path"])
+    
+    # Reset job state
+    job.update({
+        "status": "pending",
+        "original_name": file.filename,
+        "filename": None,
+        "message": None,
+        "updated_at": datetime.now().isoformat(),
+    })
+    
+    input_queue.put({
+        "id": job_id,
+        "input_path": job["input_path"],
+        "output_path": job["output_path"],
+    })
+    
+    save_jobs()
+    return jsonify(job_to_dict(job))
+
+
+@app.route("/api/download_batch", methods=["POST"])
+def download_batch():
+    data = request.json
+    job_ids = data.get("job_ids", [])
+    if not job_ids:
+        return jsonify({"error": "没有选中图片"}), 400
+    
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w') as zf:
+        for jid in job_ids:
+            job = jobs.get(jid)
+            if job and job.get("status") == "done" and os.path.exists(job["output_path"]):
+                zf.write(job["output_path"], f"removed_{job['original_name']}")
+    
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"batch_download_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
 
 
 if __name__ == "__main__":

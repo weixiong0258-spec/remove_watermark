@@ -9,10 +9,10 @@ const historyCount = document.getElementById('historyCount');
 
 let selectedFiles = []; // Array of { file, tempId, previewUrl }
 let jobMap = {}; // jobId -> { element, data }
-let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set }
+let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set, downloadBtn }
 let pollingJobs = new Set();
 
-console.log('App initialized. Version 6 (Local Preview Fix).');
+console.log('App initialized. Version 7 (Replace & Batch Download).');
 
 uploadArea.addEventListener('click', () => fileInput.click());
 
@@ -65,13 +65,11 @@ function addFiles(files) {
 
     updateVisibility();
     processBtn.disabled = selectedFiles.length === 0;
-    console.log(`Added ${files.length} files. Total selected: ${selectedFiles.length}`);
 }
 
 processBtn.addEventListener('click', async () => {
     if (!selectedFiles.length) return;
 
-    console.log('Start Processing button clicked.');
     const filesToUpload = [...selectedFiles];
     processBtn.disabled = true;
     processBtn.textContent = '正在上传并启动任务...';
@@ -80,7 +78,6 @@ processBtn.addEventListener('click', async () => {
     filesToUpload.forEach(item => formData.append('images', item.file));
 
     try {
-        console.log('Sending upload request to /api/upload...');
         const response = await fetch('/api/upload', {
             method: 'POST',
             body: formData,
@@ -89,16 +86,12 @@ processBtn.addEventListener('click', async () => {
         const data = await response.json();
 
         if (!response.ok) {
-            console.error('Upload failed:', data);
             alert(data.error || '上传失败');
             processBtn.disabled = false;
             processBtn.textContent = '开始处理';
             return;
         }
 
-        console.log('Upload success, order_id:', data.order_id, 'jobs:', data.jobs.length);
-
-        // Remove all selected placeholders
         filesToUpload.forEach(item => {
             if (jobMap[item.tempId]) {
                 jobMap[item.tempId].element.remove();
@@ -122,7 +115,7 @@ processBtn.addEventListener('click', async () => {
 
         reorganizeCards();
         processBtn.textContent = '开始处理';
-        processBtn.disabled = true; // Disabled because selectedFiles is now empty
+        processBtn.disabled = true;
 
     } catch (err) {
         console.error('Upload error:', err);
@@ -155,17 +148,23 @@ function getOrCreateOrderCard(orderId, orderData) {
             <span class="order-time" data-iso="${createdAt}">${formatTime(createdAt)}</span>
             <span class="order-count">包含 0 张图片</span>
         </div>
-        <button class="btn-toggle-order btn-secondary">展开 / 折叠</button>
+        <div class="order-actions">
+            <button class="btn-batch-download" id="batch-dl-${orderId}" disabled>下载选中图片 (0)</button>
+            <button class="btn-toggle-order btn-secondary">展开 / 折叠</button>
+        </div>
     `;
     
     const grid = document.createElement('div');
     grid.className = 'results-grid order-grid';
     grid.id = `order-grid-${orderId}`;
-    grid.style.display = 'grid'; // show by default for new/current orders
+    grid.style.display = 'grid'; 
     
     header.querySelector('.btn-toggle-order').addEventListener('click', () => {
         grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
     });
+
+    const batchDlBtn = header.querySelector('.btn-batch-download');
+    batchDlBtn.addEventListener('click', () => downloadBatch(orderId));
     
     card.appendChild(header);
     card.appendChild(grid);
@@ -177,6 +176,7 @@ function getOrCreateOrderCard(orderId, orderData) {
         grid: grid, 
         countSpan: header.querySelector('.order-count'),
         timeSpan: header.querySelector('.order-time'),
+        downloadBtn: batchDlBtn,
         jobs: new Set() 
     };
     return card;
@@ -186,7 +186,12 @@ function createResultCard(jobId, jobData, isCurrent) {
     const card = document.createElement('div');
     card.className = 'result-card';
     card.id = `card-${jobId}`;
+
+    const isDone = jobData.status === 'done';
+    const canSelect = isDone && !jobId.startsWith('selected-');
+
     card.innerHTML = `
+        ${canSelect ? `<input type="checkbox" class="card-select" data-jobid="${jobId}" data-orderid="${jobData.order_id}">` : ''}
         <div class="card-image" id="img-${jobId}">${renderImagePlaceholder(jobData.status, jobId, jobData.previewUrl)}</div>
         <div class="card-body">
             <div class="card-title" id="title-${jobId}">${escapeHtml(jobData.original_name || '-')}</div>
@@ -194,11 +199,16 @@ function createResultCard(jobId, jobData, isCurrent) {
             <div class="card-status" id="status-${jobId}">${getStatusText(jobData.status)}${jobData.message ? '：' + jobData.message : ''}</div>
             <div class="card-actions" id="actions-${jobId}" style="display:none;">
                 <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
-                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">预览结果</a>
-                <button class="btn-delete" onclick="deleteJob('${jobId}')">删除记录</button>
+                <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">预览</a>
+                <button class="btn-replace" onclick="triggerReplace('${jobId}')">替换</button>
+                <button class="btn-delete" onclick="deleteJob('${jobId}')">删除</button>
             </div>
         </div>
     `;
+
+    if (canSelect) {
+        card.querySelector('.card-select').addEventListener('change', () => updateBatchBtn(jobData.order_id));
+    }
 
     if (isCurrent) {
         currentGrid.appendChild(card);
@@ -275,9 +285,20 @@ function updateCard(jobId, data) {
         if (data.status === 'done') {
             imgDiv.innerHTML = `<img src="/api/preview/${jobId}?t=${Date.now()}" alt="处理结果">`;
             if (actionsDiv) actionsDiv.style.display = 'flex';
+            
+            // Add checkbox if not present
+            if (!job.element.querySelector('.card-select') && !jobId.startsWith('selected-')) {
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'card-select';
+                cb.dataset.jobid = jobId;
+                cb.dataset.orderid = data.order_id;
+                cb.addEventListener('change', () => updateBatchBtn(data.order_id));
+                job.element.prepend(cb);
+            }
         } else if (data.status === 'error' || data.status === 'skipped') {
             imgDiv.innerHTML = renderImagePlaceholder(data.status, jobId);
-            if (actionsDiv) actionsDiv.style.display = 'none';
+            if (actionsDiv) actionsDiv.style.display = 'flex'; // show replace/delete even on error
         } else if (data.status === 'pending' || data.status === 'processing') {
             const currentImg = imgDiv.querySelector('img');
             if (!currentImg || currentImg.src.includes('blob:')) {
@@ -285,6 +306,7 @@ function updateCard(jobId, data) {
             } else {
                 currentImg.style.opacity = '0.5';
             }
+            if (actionsDiv) actionsDiv.style.display = 'none';
         }
     }
 }
@@ -316,10 +338,83 @@ function reorganizeCards() {
         order.countSpan.textContent = `包含 ${count} 张图片`;
         if (count > 0) historyOrderCount++;
         order.element.style.display = count > 0 ? 'block' : 'none';
+        updateBatchBtn(order.order_id);
     });
 
     sortHistoryOrders();
     updateVisibility(historyOrderCount);
+}
+
+function updateBatchBtn(orderId) {
+    const order = orderMap[orderId];
+    if (!order) return;
+    const selected = order.element.querySelectorAll('.card-select:checked');
+    order.downloadBtn.textContent = `下载选中图片 (${selected.length})`;
+    order.downloadBtn.disabled = selected.length === 0;
+}
+
+async function downloadBatch(orderId) {
+    const order = orderMap[orderId];
+    const selected = Array.from(order.element.querySelectorAll('.card-select:checked')).map(cb => cb.dataset.jobid);
+    if (!selected.length) return;
+
+    order.downloadBtn.disabled = true;
+    order.downloadBtn.textContent = '正在打包...';
+
+    try {
+        const response = await fetch('/api/download_batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: selected })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `batch_download_${new Date().getTime()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } else {
+            alert('打包下载失败');
+        }
+    } catch (err) {
+        alert('打包出错：' + err.message);
+    } finally {
+        updateBatchBtn(orderId);
+    }
+}
+
+function triggerReplace(jobId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.jpg,.jpeg,.png,.bmp,.webp';
+    input.onchange = async () => {
+        if (!input.files.length) return;
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        try {
+            const response = await fetch(`/api/replace/${jobId}`, {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                const data = await response.json();
+                updateCard(jobId, data);
+                startPolling(jobId);
+            } else {
+                const err = await response.json();
+                alert('替换失败：' + (err.error || '未知错误'));
+            }
+        } catch (err) {
+            alert('替换出错：' + err.message);
+        }
+    };
+    input.click();
 }
 
 function sortHistoryOrders() {
@@ -337,10 +432,8 @@ function sortHistoryOrders() {
 function updateVisibility(historyOrderCount = 0) {
     const hasCurrent = currentGrid.children.length > 0;
     const hasHistory = Array.from(historyGrid.children).some(c => c.style.display !== 'none');
-    
     currentSection.style.display = hasCurrent ? 'block' : 'none';
     historySection.style.display = hasHistory ? 'block' : 'none';
-    
     if (hasHistory) {
         const actualCount = Array.from(historyGrid.children).filter(c => c.style.display !== 'none').length;
         historyCount.textContent = `共 ${actualCount} 个订单`;
@@ -349,12 +442,9 @@ function updateVisibility(historyOrderCount = 0) {
 
 async function loadExistingJobs() {
     try {
-        console.log('Loading existing jobs...');
         const response = await fetch('/api/jobs');
         const data = await response.json();
         if (!response.ok) return;
-
-        console.log('Loaded jobs count:', data.jobs.length);
 
         if (data.orders) {
             data.orders.forEach(order => {

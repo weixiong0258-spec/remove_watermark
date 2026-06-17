@@ -142,6 +142,7 @@ header h1 {
 }
 
 .result-card {
+    position: relative;
     background: #fff;
     border-radius: 10px;
     overflow: hidden;
@@ -152,6 +153,16 @@ header h1 {
 .result-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+}
+
+.card-select {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
 }
 
 .card-image {
@@ -196,53 +207,56 @@ header h1 {
 
 .result-card .card-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
 .btn-download,
-.btn-preview {
-    flex: 1;
+.btn-preview,
+.btn-replace,
+.btn-delete {
+    flex: 1 0 45%;
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: 12px;
     text-align: center;
     text-decoration: none;
     border-radius: 5px;
     border: none;
     cursor: pointer;
+    transition: background 0.2s;
 }
 
-.btn-download {
+.btn-download { background: #27ae60; color: #fff; }
+.btn-download:hover { background: #219150; }
+
+.btn-preview { background: #ecf0f1; color: #333; }
+.btn-preview:hover { background: #d5dbdb; }
+
+.btn-replace { background: #f39c12; color: #fff; }
+.btn-replace:hover { background: #d35400; }
+
+.btn-delete { background: #e74c3c; color: #fff; }
+.btn-delete:hover { background: #c0392b; }
+
+.btn-batch-download {
     background: #27ae60;
     color: #fff;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-right: 10px;
+    transition: background 0.2s;
 }
 
-.btn-download:hover {
+.btn-batch-download:hover {
     background: #219150;
 }
 
-.btn-preview {
-    background: #ecf0f1;
-    color: #333;
-}
-
-.btn-preview:hover {
-    background: #d5dbdb;
-}
-
-.btn-delete {
-    padding: 8px 10px;
-    font-size: 13px;
-    text-align: center;
-    border-radius: 5px;
-    border: none;
-    cursor: pointer;
-    background: #e74c3c;
-    color: #fff;
-    flex: 0.5;
-}
-
-.btn-delete:hover {
-    background: #c0392b;
+.btn-batch-download:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
 }
 
 .loading {
@@ -308,6 +322,11 @@ header h1 {
     color: #888;
 }
 
+.order-actions {
+    display: flex;
+    align-items: center;
+}
+
 .btn-secondary {
     background: #ecf0f1;
     color: #333;
@@ -337,5 +356,11 @@ header h1 {
         flex-direction: column;
         align-items: flex-start;
         gap: 6px;
+    }
+
+    .order-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
     }
 }
