@@ -1,0 +1,4 @@
+Pillow
+rapidocr-onnxruntime
+simple-lama-inpainting
+flask

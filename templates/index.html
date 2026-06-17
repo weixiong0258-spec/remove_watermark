@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>张张实拍图 水印去除工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖼️ 张张实拍图 水印去除工具</h1>
+            <p class="subtitle">自动识别并去除图片中的“张张实拍图”水印，保留其他价格标签</p>
+        </header>
+
+        <div class="notice">
+            <strong>说明：</strong>
+            本工具会自动识别图片中的 <span class="mark">“张张实拍图”</span> 水印并去除，
+            其他水印（如 💰价格标签、商品标签等）会尽量保留。
+            支持一次性上传多张图片，处理完成后可预览和下载。
+            <br>
+            <strong>刷新页面后任务状态会保留。</strong>
+        </div>
+
+        <section class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📤</div>
+                <p>点击选择图片，或拖拽图片到此处</p>
+                <p class="upload-hint">支持 JPG、PNG、BMP、WebP，可一次选择多张</p>
+                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.bmp,.webp" multiple hidden>
+            </div>
+            <button id="processBtn" class="btn-primary" disabled>开始处理</button>
+        </section>
+
+        <section class="current-section" id="currentSection" style="display: none;">
+            <h2>当前任务</h2>
+            <div class="results-grid" id="currentGrid"></div>
+        </section>
+
+        <section class="history-section" id="historySection" style="display: none;">
+            <div class="section-header">
+                <h2>历史任务</h2>
+                <span class="history-count" id="historyCount"></span>
+            </div>
+            <div class="results-grid" id="historyGrid"></div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

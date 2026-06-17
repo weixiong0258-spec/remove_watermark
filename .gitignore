@@ -1,0 +1,10 @@
+__pycache__/
+input_images/
+output_images/
+web_uploads/
+web_processed/
+web_jobs.json
+*.pyc
+.env
+.vscode/
+.idea/
