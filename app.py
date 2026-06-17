@@ -217,6 +217,8 @@ def upload():
     ensure_dirs()
     created_jobs = []
     now = datetime.now()
+    order_id = str(uuid.uuid4())
+    
     for file in files:
         if not file or not file.filename:
             continue
@@ -234,6 +236,7 @@ def upload():
 
         jobs[job_id] = {
             "id": job_id,
+            "order_id": order_id,
             "status": "pending",
             "original_name": file.filename,
             "input_path": input_path,
@@ -254,7 +257,7 @@ def upload():
         return jsonify({"error": "没有有效的图片文件（支持 jpg/png/bmp/webp）"}), 400
 
     save_jobs()
-    return jsonify({"jobs": [job_to_dict(jobs[jid]) for jid in created_jobs]}), 202
+    return jsonify({"order_id": order_id, "jobs": [job_to_dict(jobs[jid]) for jid in created_jobs]}), 202
 
 
 @app.route("/api/status/<job_id>")
@@ -279,6 +282,22 @@ def preview(job_id: str):
 def download(job_id: str):
     job = jobs.get(job_id)
     if not job or job.get("status") != "done":
+        return jsonify({"error": "结果不可用"}), 404
+    if not os.path.exists(job["output_path"]):
+        return jsonify({"error": "结果文件已丢失，请重新处理"}), 404
+    return send_file(
+        job["output_path"],
+        as_attachment=True,
+        download_name=f"removed_{job['original_name']}",
+    )
+
+
+if __name__ == "__main__":
+    ensure_dirs()
+    load_jobs()
+    start_worker()
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+
         return jsonify({"error": "结果不可用"}), 404
     if not os.path.exists(job["output_path"]):
         return jsonify({"error": "结果文件已丢失，请重新处理"}), 404

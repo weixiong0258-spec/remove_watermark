@@ -9,6 +9,7 @@ const historyCount = document.getElementById('historyCount');
 
 let selectedFiles = [];
 let jobMap = {}; // jobId -> { element, data }
+let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set }
 let pollingJobs = new Set();
 
 uploadArea.addEventListener('click', () => fileInput.click());
@@ -48,7 +49,6 @@ function addFiles(files) {
 }
 
 function renderSelectedFiles() {
-    // Selected but not yet uploaded files are shown as pending cards in current section.
     if (!selectedFiles.length) {
         updateVisibility();
         return;
@@ -86,7 +86,6 @@ processBtn.addEventListener('click', async () => {
             return;
         }
 
-        // Remove selected-file placeholder cards.
         selectedFiles.forEach((_, index) => {
             const tempId = `selected-${index}`;
             if (jobMap[tempId]) {
@@ -96,7 +95,8 @@ processBtn.addEventListener('click', async () => {
         });
         selectedFiles = [];
 
-        // Add real job cards and start polling.
+        getOrCreateOrderCard(data.order_id, { order_id: data.order_id, created_at: new Date().toISOString() });
+
         data.jobs.forEach(job => {
             jobMap[job.id] = {
                 element: createResultCard(job.id, job, true),
@@ -105,7 +105,7 @@ processBtn.addEventListener('click', async () => {
             startPolling(job.id);
         });
 
-        updateVisibility();
+        reorganizeCards();
         processBtn.textContent = '开始处理';
         processBtn.disabled = false;
 
@@ -115,6 +115,57 @@ processBtn.addEventListener('click', async () => {
         processBtn.textContent = '开始处理';
     }
 });
+
+function getOrCreateOrderCard(orderId, orderData) {
+    if (orderMap[orderId]) {
+        // Update time if it was missing or we have a better one
+        if (orderData.created_at) {
+            orderMap[orderId].timeSpan.textContent = formatTime(orderData.created_at);
+            orderMap[orderId].timeSpan.dataset.iso = orderData.created_at;
+        }
+        return orderMap[orderId].element;
+    }
+    
+    const card = document.createElement('div');
+    card.className = 'order-card';
+    card.id = `order-${orderId}`;
+    
+    const header = document.createElement('div');
+    header.className = 'order-header';
+    
+    const createdAt = orderData.created_at || new Date().toISOString();
+    
+    header.innerHTML = `
+        <div class="order-info">
+            <span class="order-time" data-iso="${createdAt}">${formatTime(createdAt)}</span>
+            <span class="order-count">包含 0 张图片</span>
+        </div>
+        <button class="btn-toggle-order btn-secondary">展开 / 折叠</button>
+    `;
+    
+    const grid = document.createElement('div');
+    grid.className = 'results-grid order-grid';
+    grid.id = `order-grid-${orderId}`;
+    grid.style.display = 'none'; // hidden by default
+    
+    header.querySelector('.btn-toggle-order').addEventListener('click', () => {
+        grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
+    });
+    
+    card.appendChild(header);
+    card.appendChild(grid);
+    
+    historyGrid.appendChild(card);
+    
+    orderMap[orderId] = { 
+        element: card, 
+        grid: grid, 
+        countSpan: header.querySelector('.order-count'),
+        timeSpan: header.querySelector('.order-time'),
+        jobs: new Set() 
+    };
+    return card;
+}
 
 function createResultCard(jobId, jobData, isCurrent) {
     const card = document.createElement('div');
@@ -135,8 +186,6 @@ function createResultCard(jobId, jobData, isCurrent) {
 
     if (isCurrent) {
         currentGrid.appendChild(card);
-    } else {
-        historyGrid.appendChild(card);
     }
     return card;
 }
@@ -210,41 +259,59 @@ function updateCard(jobId, data) {
 }
 
 function reorganizeCards() {
-    // Move completed/error/skipped cards from current to history, sorted by time desc.
     const activeStatuses = ['pending', 'processing', 'selected'];
+    
     Object.values(jobMap).forEach(({ element, data }) => {
         if (activeStatuses.includes(data.status)) {
             if (element.parentElement !== currentGrid) {
                 currentGrid.appendChild(element);
             }
         } else {
-            if (element.parentElement !== historyGrid) {
-                historyGrid.appendChild(element);
+            const orderId = data.order_id || data.id;
+            if (!orderMap[orderId]) {
+                 getOrCreateOrderCard(orderId, { order_id: orderId, created_at: data.created_at });
             }
+            const orderGrid = orderMap[orderId].grid;
+            if (element.parentElement !== orderGrid) {
+                orderGrid.appendChild(element);
+            }
+            orderMap[orderId].jobs.add(data.id);
         }
     });
-    sortHistory();
-    updateVisibility();
+    
+    let historyOrderCount = 0;
+    Object.values(orderMap).forEach(order => {
+        const count = order.jobs.size;
+        order.countSpan.textContent = `包含 ${count} 张图片`;
+        if (count > 0) historyOrderCount++;
+        order.element.style.display = count > 0 ? 'block' : 'none';
+    });
+
+    sortHistoryOrders();
+    updateVisibility(historyOrderCount);
 }
 
-function sortHistory() {
+function sortHistoryOrders() {
     const cards = Array.from(historyGrid.children);
     cards.sort((a, b) => {
-        const idA = a.id.replace('card-', '');
-        const idB = b.id.replace('card-', '');
-        const timeA = jobMap[idA]?.data?.created_at || '';
-        const timeB = jobMap[idB]?.data?.created_at || '';
+        const idA = a.id.replace('order-', '');
+        const idB = b.id.replace('order-', '');
+        const timeA = orderMap[idA]?.timeSpan.dataset.iso || '';
+        const timeB = orderMap[idB]?.timeSpan.dataset.iso || '';
         return timeB.localeCompare(timeA);
     });
     cards.forEach(card => historyGrid.appendChild(card));
 }
 
-function updateVisibility() {
+function updateVisibility(historyOrderCount = 0) {
+    if (historyOrderCount === 0) {
+        historyOrderCount = Array.from(historyGrid.children).filter(c => c.style.display !== 'none').length;
+    }
     const hasCurrent = currentGrid.children.length > 0;
-    const hasHistory = historyGrid.children.length > 0;
+    const hasHistory = historyOrderCount > 0;
     currentSection.style.display = hasCurrent ? 'block' : 'none';
     historySection.style.display = hasHistory ? 'block' : 'none';
-    historyCount.textContent = hasHistory ? `共 ${historyGrid.children.length} 条` : '';
+    historyCount.textContent = hasHistory ? `共 ${historyOrderCount} 个订单` : '';
 }
 
 async function loadExistingJobs() {
@@ -253,12 +320,21 @@ async function loadExistingJobs() {
         const data = await response.json();
         if (!response.ok) return;
 
+        if (data.orders) {
+            data.orders.forEach(order => {
+                getOrCreateOrderCard(order.order_id, order);
+            });
+        }
+
         data.jobs.forEach(job => {
             if (jobMap[job.id]) return;
             const isActive = ['pending', 'processing'].includes(job.status);
             const card = createResultCard(job.id, job, isActive);
             jobMap[job.id] = { element: card, data: job };
-            if (isActive) {
+            
+            if (!isActive) {
+                updateCard(job.id, job); // Display fix: Load image immediately
+            } else {
                 startPolling(job.id);
             }
         });
@@ -301,5 +377,4 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Load existing jobs when page opens.
 document.addEventListener('DOMContentLoaded', loadExistingJobs);

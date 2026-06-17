@@ -252,6 +252,66 @@ header h1 {
 .status-skipped { color: #7f8c8d; }
 .status-selected { color: #3498db; }
 
+.orders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.order-card {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border: 1px solid #eef1f5;
+}
+
+.order-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #fcfcfc;
+    border-bottom: 1px solid #eef1f5;
+}
+
+.order-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.order-time {
+    font-size: 15px;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.order-count {
+    font-size: 13px;
+    color: #888;
+}
+
+.btn-secondary {
+    background: #ecf0f1;
+    color: #333;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #d5dbdb;
+}
+
+.order-grid {
+    padding: 20px;
+    background: #fff;
+}
+
 @media (max-width: 600px) {
     .results-grid {
         grid-template-columns: 1fr;
