@@ -371,32 +371,26 @@ async function downloadBatch(orderId) {
     if (!selected.length) return;
 
     order.downloadBtn.disabled = true;
-    order.downloadBtn.textContent = '正在打包...';
-
-    try {
-        const response = await fetch('/api/download_batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job_ids: selected })
-        });
+    const total = selected.length;
+    
+    for (let i = 0; i < selected.length; i++) {
+        const jobId = selected[i];
+        order.downloadBtn.textContent = `正在下载 (${i + 1}/${total})...`;
         
-        if (response.ok) {
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `batch_download_${new Date().getTime()}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-        } else {
-            alert('打包下载失败');
-        }
-    } catch (err) {
-        alert('打包出错：' + err.message);
-    } finally {
-        updateBatchBtn(orderId);
+        // Trigger individual download via hidden link
+        const a = document.createElement('a');
+        a.href = `/api/download/${jobId}`;
+        a.style.display = 'none';
+        // Note: as_attachment=True in backend will force download
+        document.body.appendChild(a);
+        a.click();
+        
+        // Small delay to prevent browser download throttling
+        await new Promise(resolve => setTimeout(resolve, 500));
+        document.body.removeChild(a);
     }
+
+    updateBatchBtn(orderId);
 }
 
 function triggerReplace(jobId) {
