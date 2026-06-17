@@ -46,6 +46,18 @@
         </section>
     </div>
 
+    <!-- Image Gallery Modal -->
+    <div id="galleryModal" class="modal">
+        <span class="modal-close">&times;</span>
+        <div class="modal-content">
+            <img id="galleryImg" src="" alt="预览图">
+            <div class="modal-nav modal-prev">&#10094;</div>
+            <div class="modal-nav modal-next">&#10095;</div>
+            <div class="modal-caption" id="galleryCaption"></div>
+            <div class="modal-counter" id="galleryCounter"></div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/app.js') }}?v=3"></script>
 </body>
 </html>

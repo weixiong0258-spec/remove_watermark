@@ -7,12 +7,27 @@ const historySection = document.getElementById('historySection');
 const historyGrid = document.getElementById('historyGrid');
 const historyCount = document.getElementById('historyCount');
 
+// Modal Elements
+const galleryModal = document.getElementById('galleryModal');
+const galleryImg = document.getElementById('galleryImg');
+const galleryCaption = document.getElementById('galleryCaption');
+const galleryCounter = document.getElementById('galleryCounter');
+const modalClose = document.querySelector('.modal-close');
+const modalPrev = document.querySelector('.modal-prev');
+const modalNext = document.querySelector('.modal-next');
+
 let selectedFiles = []; // Array of { file, tempId, previewUrl }
 let jobMap = {}; // jobId -> { element, data }
 let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set, downloadBtn }
 let pollingJobs = new Set();
 
-console.log('App initialized. Version 7 (Replace & Batch Download).');
+// Gallery State
+let galleryImages = []; // Array of { src, title }
+let currentGalleryIndex = 0;
+
+console.log('App initialized. Version 8 (Batch Gallery Preview).');
+
+// --- Event Listeners ---
 
 uploadArea.addEventListener('click', () => fileInput.click());
 
@@ -37,6 +52,22 @@ fileInput.addEventListener('change', () => {
     addFiles(files);
     fileInput.value = '';
 });
+
+// Modal Events
+modalClose.onclick = () => galleryModal.style.display = 'none';
+window.onclick = (e) => { if (e.target === galleryModal) galleryModal.style.display = 'none'; };
+modalPrev.onclick = () => navigateGallery(-1);
+modalNext.onclick = () => navigateGallery(1);
+
+document.addEventListener('keydown', (e) => {
+    if (galleryModal.style.display === 'block') {
+        if (e.key === 'ArrowLeft') navigateGallery(-1);
+        if (e.key === 'ArrowRight') navigateGallery(1);
+        if (e.key === 'Escape') galleryModal.style.display = 'none';
+    }
+});
+
+// --- Functions ---
 
 function isImage(file) {
     const ext = file.name.split('.').pop().toLowerCase();
@@ -149,6 +180,7 @@ function getOrCreateOrderCard(orderId, orderData) {
             <span class="order-count">包含 0 张图片</span>
         </div>
         <div class="order-actions">
+            <button class="btn-preview btn-secondary" style="margin-right: 10px; display: none;" id="batch-prev-${orderId}">预览选中图片</button>
             <button class="btn-batch-download" id="batch-dl-${orderId}" disabled>下载选中图片 (0)</button>
             <button class="btn-toggle-order btn-secondary">展开 / 折叠</button>
         </div>
@@ -165,6 +197,9 @@ function getOrCreateOrderCard(orderId, orderData) {
 
     const batchDlBtn = header.querySelector('.btn-batch-download');
     batchDlBtn.addEventListener('click', () => downloadBatch(orderId));
+
+    const batchPrevBtn = header.querySelector('.btn-preview');
+    batchPrevBtn.addEventListener('click', () => openGalleryFromOrder(orderId));
     
     card.appendChild(header);
     card.appendChild(grid);
@@ -177,6 +212,7 @@ function getOrCreateOrderCard(orderId, orderData) {
         countSpan: header.querySelector('.order-count'),
         timeSpan: header.querySelector('.order-time'),
         downloadBtn: batchDlBtn,
+        previewBtn: batchPrevBtn,
         jobs: new Set() 
     };
     return card;
@@ -200,7 +236,7 @@ function createResultCard(jobId, jobData, isCurrent) {
             <div class="card-status" id="status-${jobId}">${getStatusText(jobData.status)}${jobData.message ? '：' + jobData.message : ''}</div>
             <div class="card-actions" id="actions-${jobId}" style="display: ${isSelected ? 'flex' : 'none'};">
                 <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
-                <a href="/api/preview/${jobId}" class="btn-preview" id="preview-link-${jobId}" target="_blank">预览</a>
+                <button class="btn-preview" onclick="openGallery('${jobId}')" id="preview-btn-${jobId}">预览</button>
                 <button class="btn-replace" id="replace-btn-${jobId}" onclick="triggerReplace('${jobId}')">替换</button>
                 <button class="btn-delete" id="delete-btn-${jobId}" onclick="deleteJob('${jobId}')">删除</button>
             </div>
@@ -276,7 +312,6 @@ function updateCard(jobId, data) {
     const imgDiv = document.getElementById(`img-${jobId}`);
     const statusDiv = document.getElementById(`status-${jobId}`);
     const actionsDiv = document.getElementById(`actions-${jobId}`);
-    const previewLink = document.getElementById(`preview-link-${jobId}`);
     const replaceBtn = document.getElementById(`replace-btn-${jobId}`);
     const deleteBtn = document.getElementById(`delete-btn-${jobId}`);
 
@@ -291,15 +326,11 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'inline-block';
-                if (previewLink) {
-                    previewLink.style.display = 'inline-block';
-                    previewLink.href = `/api/preview/${jobId}`;
-                }
+                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'none';
                 if (deleteBtn) deleteBtn.style.display = 'none';
             }
             
-            // Add checkbox if not present
             if (!job.element.querySelector('.card-select') && !jobId.startsWith('selected-')) {
                 const cb = document.createElement('input');
                 cb.type = 'checkbox';
@@ -314,10 +345,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                if (previewLink) {
-                    previewLink.style.display = 'inline-block';
-                    previewLink.href = `/api/preview_input/${jobId}`;
-                }
+                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'inline-block';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -331,10 +359,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                if (previewLink) {
-                    previewLink.style.display = 'inline-block';
-                    previewLink.href = `/api/preview_input/${jobId}`;
-                }
+                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'inline-block';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -342,7 +367,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                if (previewLink) previewLink.style.display = 'none';
+                actionsDiv.querySelector('.btn-preview').style.display = 'none';
                 if (replaceBtn) replaceBtn.style.display = 'none';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -390,7 +415,56 @@ function updateBatchBtn(orderId) {
     const selected = order.element.querySelectorAll('.card-select:checked');
     order.downloadBtn.textContent = `下载选中图片 (${selected.length})`;
     order.downloadBtn.disabled = selected.length === 0;
+    order.previewBtn.style.display = selected.length > 1 ? 'inline-block' : 'none';
 }
+
+// --- Gallery Logic ---
+
+function openGallery(jobId) {
+    const job = jobMap[jobId];
+    if (!job) return;
+    
+    const src = (job.data.status === 'done') ? `/api/preview/${jobId}` : `/api/preview_input/${jobId}`;
+    galleryImages = [{ src, title: job.data.original_name }];
+    currentGalleryIndex = 0;
+    showGalleryImage();
+}
+
+function openGalleryFromOrder(orderId) {
+    const order = orderMap[orderId];
+    const selected = Array.from(order.element.querySelectorAll('.card-select:checked')).map(cb => cb.dataset.jobid);
+    
+    galleryImages = selected.map(jid => {
+        const job = jobMap[jid];
+        return {
+            src: (job.data.status === 'done') ? `/api/preview/${jid}` : `/api/preview_input/${jid}`,
+            title: job.data.original_name
+        };
+    });
+    
+    currentGalleryIndex = 0;
+    showGalleryImage();
+}
+
+function showGalleryImage() {
+    const imgData = galleryImages[currentGalleryIndex];
+    galleryImg.src = imgData.src;
+    galleryCaption.textContent = imgData.title;
+    galleryCounter.textContent = `${currentGalleryIndex + 1} / ${galleryImages.length}`;
+    
+    modalPrev.style.display = galleryImages.length > 1 ? 'block' : 'none';
+    modalNext.style.display = galleryImages.length > 1 ? 'block' : 'none';
+    galleryModal.style.display = 'block';
+}
+
+function navigateGallery(step) {
+    currentGalleryIndex += step;
+    if (currentGalleryIndex >= galleryImages.length) currentGalleryIndex = 0;
+    if (currentGalleryIndex < 0) currentGalleryIndex = galleryImages.length - 1;
+    showGalleryImage();
+}
+
+// --- End Gallery Logic ---
 
 async function downloadBatch(orderId) {
     const order = orderMap[orderId];
@@ -404,15 +478,12 @@ async function downloadBatch(orderId) {
         const jobId = selected[i];
         order.downloadBtn.textContent = `正在下载 (${i + 1}/${total})...`;
         
-        // Trigger individual download via hidden link
         const a = document.createElement('a');
         a.href = `/api/download/${jobId}`;
         a.style.display = 'none';
-        // Note: as_attachment=True in backend will force download
         document.body.appendChild(a);
         a.click();
         
-        // Small delay to prevent browser download throttling
         await new Promise(resolve => setTimeout(resolve, 500));
         document.body.removeChild(a);
     }
@@ -507,7 +578,6 @@ async function loadExistingJobs() {
 async function deleteJob(jobId) {
     if (!confirm('确定要删除这张图片吗？')) return;
     
-    // If it's a local selected file (not yet uploaded)
     if (jobId.startsWith('selected-')) {
         const index = selectedFiles.findIndex(item => item.tempId === jobId);
         if (index !== -1) {
