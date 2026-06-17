@@ -180,6 +180,7 @@ function createResultCard(jobId, jobData, isCurrent) {
             <div class="card-actions" id="actions-${jobId}" style="display:none;">
                 <a href="/api/download/${jobId}" class="btn-download" target="_blank">下载</a>
                 <a href="/api/preview/${jobId}" class="btn-preview" target="_blank">查看</a>
+                <button class="btn-delete" onclick="deleteJob('${jobId}')">删除</button>
             </div>
         </div>
     `;
@@ -340,8 +341,34 @@ async function loadExistingJobs() {
         });
 
         reorganizeCards();
+        updateVisibility(); // Force visibility update after loading everything
     } catch (err) {
         console.error('加载历史任务失败：', err);
+    }
+}
+
+async function deleteJob(jobId) {
+    if (!confirm('确定要删除这张图片吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/delete/${jobId}`, { method: 'DELETE' });
+        if (response.ok) {
+            const job = jobMap[jobId];
+            if (job) {
+                const orderId = job.data.order_id || job.data.id;
+                job.element.remove();
+                delete jobMap[jobId];
+                
+                if (orderMap[orderId]) {
+                    orderMap[orderId].jobs.delete(jobId);
+                    reorganizeCards();
+                }
+            }
+        } else {
+            alert('删除失败');
+        }
+    } catch (err) {
+        alert('删除出错：' + err.message);
     }
 }
 

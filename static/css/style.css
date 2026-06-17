@@ -229,6 +229,22 @@ header h1 {
     background: #d5dbdb;
 }
 
+.btn-delete {
+    padding: 8px 10px;
+    font-size: 13px;
+    text-align: center;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    background: #e74c3c;
+    color: #fff;
+    flex: 0.5;
+}
+
+.btn-delete:hover {
+    background: #c0392b;
+}
+
 .loading {
     text-align: center;
     color: #888;

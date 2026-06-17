@@ -308,6 +308,26 @@ def download(job_id: str):
     )
 
 
+@app.route("/api/delete/<job_id>", methods=["DELETE"])
+def delete_job(job_id: str):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "任务不存在"}), 404
+    
+    # Try to delete files
+    try:
+        if job.get("input_path") and os.path.exists(job["input_path"]):
+            os.remove(job["input_path"])
+        if job.get("output_path") and os.path.exists(job["output_path"]):
+            os.remove(job["output_path"])
+    except Exception as e:
+        print(f"[Server] Error deleting files for job {job_id}: {e}")
+
+    jobs.pop(job_id, None)
+    save_jobs()
+    return jsonify({"success": True})
+
+
 if __name__ == "__main__":
     ensure_dirs()
     load_jobs()
