@@ -18,14 +18,14 @@ const modalNext = document.querySelector('.modal-next');
 
 let selectedFiles = []; // Array of { file, tempId, previewUrl }
 let jobMap = {}; // jobId -> { element, data }
-let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set, downloadBtn }
+let orderMap = {}; // orderId -> { element, grid, countSpan, timeSpan, jobs: Set, downloadBtn, previewBtn }
 let pollingJobs = new Set();
 
 // Gallery State
 let galleryImages = []; // Array of { src, title }
 let currentGalleryIndex = 0;
 
-console.log('App initialized. Version 8 (Batch Gallery Preview).');
+console.log('App initialized. Version 9 (ZIP + Logic Fix).');
 
 // --- Event Listeners ---
 
@@ -207,6 +207,7 @@ function getOrCreateOrderCard(orderId, orderData) {
     historyGrid.appendChild(card);
     
     orderMap[orderId] = { 
+        order_id: orderId,
         element: card, 
         grid: grid, 
         countSpan: header.querySelector('.order-count'),
@@ -312,6 +313,7 @@ function updateCard(jobId, data) {
     const imgDiv = document.getElementById(`img-${jobId}`);
     const statusDiv = document.getElementById(`status-${jobId}`);
     const actionsDiv = document.getElementById(`actions-${jobId}`);
+    const previewBtn = document.getElementById(`preview-btn-${jobId}`);
     const replaceBtn = document.getElementById(`replace-btn-${jobId}`);
     const deleteBtn = document.getElementById(`delete-btn-${jobId}`);
 
@@ -326,7 +328,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'inline-block';
-                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
+                if (previewBtn) previewBtn.style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'none';
                 if (deleteBtn) deleteBtn.style.display = 'none';
             }
@@ -345,7 +347,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
+                if (previewBtn) previewBtn.style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'inline-block';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -359,7 +361,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                actionsDiv.querySelector('.btn-preview').style.display = 'inline-block';
+                if (previewBtn) previewBtn.style.display = 'inline-block';
                 if (replaceBtn) replaceBtn.style.display = 'inline-block';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -367,7 +369,7 @@ function updateCard(jobId, data) {
             if (actionsDiv) {
                 actionsDiv.style.display = 'flex';
                 actionsDiv.querySelector('.btn-download').style.display = 'none';
-                actionsDiv.querySelector('.btn-preview').style.display = 'none';
+                if (previewBtn) previewBtn.style.display = 'none';
                 if (replaceBtn) replaceBtn.style.display = 'none';
                 if (deleteBtn) deleteBtn.style.display = 'inline-block';
             }
@@ -415,7 +417,8 @@ function updateBatchBtn(orderId) {
     const selected = order.element.querySelectorAll('.card-select:checked');
     order.downloadBtn.textContent = `下载选中图片 (${selected.length})`;
     order.downloadBtn.disabled = selected.length === 0;
-    order.previewBtn.style.display = selected.length > 1 ? 'inline-block' : 'none';
+    // Show "Preview Selected" button if at least one image is selected (even for 1 image, gallery is nice)
+    order.previewBtn.style.display = selected.length >= 1 ? 'inline-block' : 'none';
 }
 
 // --- Gallery Logic ---
@@ -447,6 +450,7 @@ function openGalleryFromOrder(orderId) {
 }
 
 function showGalleryImage() {
+    if (galleryImages.length === 0) return;
     const imgData = galleryImages[currentGalleryIndex];
     galleryImg.src = imgData.src;
     galleryCaption.textContent = imgData.title;
@@ -472,23 +476,32 @@ async function downloadBatch(orderId) {
     if (!selected.length) return;
 
     order.downloadBtn.disabled = true;
-    const total = selected.length;
-    
-    for (let i = 0; i < selected.length; i++) {
-        const jobId = selected[i];
-        order.downloadBtn.textContent = `正在下载 (${i + 1}/${total})...`;
-        
-        const a = document.createElement('a');
-        a.href = `/api/download/${jobId}`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        document.body.removeChild(a);
-    }
+    order.downloadBtn.textContent = '正在打包...';
 
-    updateBatchBtn(orderId);
+    try {
+        const response = await fetch('/api/download_batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: selected })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `batch_download_${new Date().getTime()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } else {
+            alert('打包下载失败');
+        }
+    } catch (err) {
+        alert('打包出错：' + err.message);
+    } finally {
+        updateBatchBtn(orderId);
+    }
 }
 
 function triggerReplace(jobId) {
