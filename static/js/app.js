@@ -132,7 +132,10 @@ processBtn.addEventListener('click', async () => {
         });
         selectedFiles = [];
 
-        getOrCreateOrderCard(data.order_id, { order_id: data.order_id, created_at: new Date().toISOString() });
+        const orderCard = getOrCreateOrderCard(data.order_id, { order_id: data.order_id, created_at: new Date().toISOString() });
+        if (orderMap[data.order_id]) {
+            orderMap[data.order_id].grid.style.display = 'grid'; // Expand newly created order
+        }
 
         data.jobs.forEach(job => {
             const card = createResultCard(job.id, job, true);
@@ -189,7 +192,7 @@ function getOrCreateOrderCard(orderId, orderData) {
     const grid = document.createElement('div');
     grid.className = 'results-grid order-grid';
     grid.id = `order-grid-${orderId}`;
-    grid.style.display = 'grid'; 
+    grid.style.display = 'none'; // hidden by default for history
     
     header.querySelector('.btn-toggle-order').addEventListener('click', () => {
         grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
