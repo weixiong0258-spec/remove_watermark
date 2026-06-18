@@ -33,7 +33,13 @@
         </section>
 
         <section class="current-section" id="currentSection" style="display: none;">
-            <h2>当前任务</h2>
+            <div class="section-header">
+                <h2>当前任务</h2>
+                <div class="history-count" style="display: flex; gap: 15px;">
+                    <span id="processingCount">正在处理: 0</span>
+                    <span id="pendingCount">排队中: 0</span>
+                </div>
+            </div>
             <div class="results-grid" id="currentGrid"></div>
         </section>
 

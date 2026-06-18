@@ -3,6 +3,8 @@ const fileInput = document.getElementById('fileInput');
 const processBtn = document.getElementById('processBtn');
 const currentSection = document.getElementById('currentSection');
 const currentGrid = document.getElementById('currentGrid');
+const processingCountSpan = document.getElementById('processingCount');
+const pendingCountSpan = document.getElementById('pendingCount');
 const historySection = document.getElementById('historySection');
 const historyGrid = document.getElementById('historyGrid');
 const historyCount = document.getElementById('historyCount');
@@ -183,6 +185,9 @@ function getOrCreateOrderCard(orderId, orderData) {
             <span class="order-count">包含 0 张图片</span>
         </div>
         <div class="order-actions">
+            <label style="margin-right: 15px; font-size: 13px; cursor: pointer; display: flex; align-items: center;">
+                <input type="checkbox" class="order-select-all" style="margin-right: 5px;"> 全选
+            </label>
             <button class="btn-preview btn-secondary" style="margin-right: 10px; display: none;" id="batch-prev-${orderId}">预览选中图片</button>
             <button class="btn-batch-download" id="batch-dl-${orderId}" disabled>下载选中图片 (0)</button>
             <button class="btn-toggle-order btn-secondary">展开 / 折叠</button>
@@ -196,6 +201,14 @@ function getOrCreateOrderCard(orderId, orderData) {
     
     header.querySelector('.btn-toggle-order').addEventListener('click', () => {
         grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
+    });
+
+    const selectAllCb = header.querySelector('.order-select-all');
+    selectAllCb.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        const checkboxes = grid.querySelectorAll('.card-select');
+        checkboxes.forEach(cb => cb.checked = isChecked);
+        updateBatchBtn(orderId);
     });
 
     const batchDlBtn = header.querySelector('.btn-batch-download');
@@ -215,6 +228,7 @@ function getOrCreateOrderCard(orderId, orderData) {
         grid: grid, 
         countSpan: header.querySelector('.order-count'),
         timeSpan: header.querySelector('.order-time'),
+        selectAllCb: selectAllCb,
         downloadBtn: batchDlBtn,
         previewBtn: batchPrevBtn,
         jobs: new Set() 
@@ -382,12 +396,16 @@ function updateCard(jobId, data) {
 
 function reorganizeCards() {
     const activeStatuses = ['pending', 'processing', 'selected'];
+    let processingCount = 0;
+    let pendingCount = 0;
     
     Object.values(jobMap).forEach(({ element, data }) => {
         if (activeStatuses.includes(data.status)) {
             if (element.parentElement !== currentGrid) {
                 currentGrid.appendChild(element);
             }
+            if (data.status === 'processing') processingCount++;
+            if (data.status === 'pending') pendingCount++;
         } else {
             const orderId = data.order_id || data.id;
             if (!orderMap[orderId]) {
@@ -412,16 +430,27 @@ function reorganizeCards() {
 
     sortHistoryOrders();
     updateVisibility(historyOrderCount);
+    
+    if (processingCountSpan) processingCountSpan.innerHTML = `正在去水印: <strong>${processingCount}</strong>`;
+    if (pendingCountSpan) pendingCountSpan.innerHTML = `排队中: <strong>${pendingCount}</strong>`;
 }
 
 function updateBatchBtn(orderId) {
     const order = orderMap[orderId];
     if (!order) return;
+    const checkboxes = order.element.querySelectorAll('.card-select');
     const selected = order.element.querySelectorAll('.card-select:checked');
     order.downloadBtn.textContent = `下载选中图片 (${selected.length})`;
     order.downloadBtn.disabled = selected.length === 0;
-    // Show "Preview Selected" button if at least one image is selected (even for 1 image, gallery is nice)
+    // Show "Preview Selected" button if at least one image is selected
     order.previewBtn.style.display = selected.length >= 1 ? 'inline-block' : 'none';
+    
+    // Sync Select All checkbox
+    if (checkboxes.length > 0) {
+        order.selectAllCb.checked = checkboxes.length === selected.length;
+    } else {
+        order.selectAllCb.checked = false;
+    }
 }
 
 // --- Gallery Logic ---
